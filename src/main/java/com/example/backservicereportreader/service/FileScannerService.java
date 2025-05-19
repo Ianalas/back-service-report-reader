@@ -11,12 +11,19 @@ import java.util.List;
 @Service
 public class FileScannerService {
 
-    public void transformFilesToText(File file) throws Exception {
+    private final AiInterpretationService aiService;
+
+    public FileScannerService(AiInterpretationService aiService) {
+        this.aiService = aiService;
+    }
+
+    public String transformFilesToText(File file) throws Exception {
         PDDocument document = Loader.loadPDF(file);
 
         PDFTextStripper stripper = new PDFTextStripper();
         List<String> lines = List.of(stripper.getText(document).split("\n"));
+        document.close();
 
-        lines.forEach(System.out::println);
+        return aiService.summarizePdfText(lines);
     }
 }
