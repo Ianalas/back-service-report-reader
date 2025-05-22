@@ -35,8 +35,7 @@ public class FileStorageService {
         }
     }
 
-    public String storeFile(MultipartFile file, UUID userID) throws IOException {
-
+    public AiResultDTO storeFile(MultipartFile file, UUID userID) throws IOException {
         String fileName = StringUtils.cleanPath(Objects.requireNonNull(file.getOriginalFilename()));
         Path targetLocation = this.fileStorageLocation.resolve(fileName);
         file.transferTo(targetLocation);
@@ -46,19 +45,26 @@ public class FileStorageService {
             System.out.println("Resumo gerado: " + summarized);
 
             AiResult summary = new AiResult();
-            summary.setTitle(file.getName());
+            summary.setTitle(file.getName()); // Aqui talvez você queira usar fileName
             summary.setContent(summarized);
             summary.setUserId(userID);
 
-            summaryRepository.save(summary);
+            AiResult saved = summaryRepository.save(summary);
 
-           return summarized;
+            return new AiResultDTO(
+                    saved.getId(),
+                    saved.getContent(),
+                    saved.getUserId(),
+                    saved.getCreatedAt(),
+                    saved.getTitle()
+            );
+
         } catch (Exception e) {
             System.out.println("Erro ao transformar PDF em texto: " + e.getMessage());
-            return "Erro ao transformar PDF em texto: " + e.getMessage();
+            throw new RuntimeException("Erro ao transformar PDF em texto", e);
         }
-
     }
+
 
     @Transactional(readOnly = true)
     public List<AiResultDTO> findAllSummariesByUserId(UUID userId) {
@@ -71,6 +77,18 @@ public class FileStorageService {
                         result.getTitle()
                 ))
                 .toList();
+    }
+
+    public AiResultDTO findReportById(UUID reportId) {
+        return summaryRepository.findById(reportId)
+                .map(result -> new AiResultDTO(
+                        result.getId(),
+                        result.getContent(),
+                        result.getUserId(),
+                        result.getCreatedAt(),
+                        result.getTitle()
+                ))
+                .orElseThrow(() -> new IllegalArgumentException("Laudo com ID " + reportId + " não encontrado."));
     }
 
     public void deleteById(String id) {

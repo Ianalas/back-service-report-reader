@@ -17,7 +17,9 @@ public class AiInterpretationService {
     public String summarizePdfText(List<String> lines) {
         String fullText = String.join("\n", lines);
 
-        String prompt = "Resuma o conteúdo a seguir:\n\n" + fullText;
+        String prompt = "Lembre-se que vc é um especialista em medicina que deverá " +
+                "resumir de forma fácil a paritr de dados passados abaixo, o que está sendo falado naqueles dados mostrados," +
+                "e por fim divida em dois tópicos (Explicação e conclusão):\n\n" + fullText;
 
         return chatClient.call(prompt);
     }
