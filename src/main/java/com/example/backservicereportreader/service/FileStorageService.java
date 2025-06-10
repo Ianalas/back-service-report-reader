@@ -1,14 +1,18 @@
 package com.example.backservicereportreader.service;
 
+import com.amazonaws.services.s3.AmazonS3;
 import com.example.backservicereportreader.Repository.ResultRepository;
 import com.example.backservicereportreader.config.FileStorageProperties;
 import com.example.backservicereportreader.dto.AiResultDTO;
 import com.example.backservicereportreader.entity.AiResult;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.List;
@@ -18,36 +22,43 @@ import java.util.UUID;
 @Service
 public class FileStorageService {
 
-    private final Path fileStorageLocation;
+    @Value("${aws.bucket.name}")
+    private String bucketName;
+
+    private final AmazonS3 s3Client;
     private final FileScannerService fileScannerService;
     private final ResultRepository summaryRepository;
 
-    public FileStorageService(FileStorageProperties fileStorageProperties, FileScannerService fileScannerService, ResultRepository summaryRepository) {
-        this.fileStorageLocation = Paths.get(fileStorageProperties.getUploadDir())
-                .toAbsolutePath().normalize();
+    public FileStorageService(AmazonS3 s3Client, FileScannerService fileScannerService, ResultRepository summaryRepository) {
+        this.s3Client = s3Client;
         this.fileScannerService = fileScannerService;
         this.summaryRepository = summaryRepository;
-
-        try {
-            Files.createDirectories(this.fileStorageLocation);
-        } catch (IOException e) {
-            throw new RuntimeException("Não foi possível criar o diretório de upload.", e);
-        }
     }
 
-    public AiResultDTO storeFile(MultipartFile file, UUID userID) throws IOException {
-        String fileName = StringUtils.cleanPath(Objects.requireNonNull(file.getOriginalFilename()));
-        Path targetLocation = this.fileStorageLocation.resolve(fileName);
-        file.transferTo(targetLocation);
 
+    public AiResultDTO storeFile(MultipartFile multipartFile, UUID userID) throws IOException {
+        String fileName = UUID.randomUUID() + "-" + multipartFile.getOriginalFilename();
+
+        File localFile = null;
         try {
-            String summarized = fileScannerService.transformFilesToText(targetLocation.toFile());
+            localFile = convertMultipartToFile(multipartFile);
+
+            // Transforma PDF em texto
+            String summarized = fileScannerService.transformFilesToText(localFile);
             System.out.println("Resumo gerado: " + summarized);
 
+            // Faz o upload do arquivo original para o S3
+            s3Client.putObject(bucketName, fileName, localFile);
+            String fileUrl = s3Client.getUrl(bucketName, fileName).toString();
+
+
             AiResult summary = new AiResult();
-            summary.setTitle(file.getName()); // Aqui talvez você queira usar fileName
+            summary.setTitle(multipartFile.getOriginalFilename());
             summary.setContent(summarized);
             summary.setUserId(userID);
+
+            //summary.setFileUrl(fileUrl); // salvar a URL no db
+            System.out.println("url do pdf"+fileUrl);
 
             AiResult saved = summaryRepository.save(summary);
 
@@ -60,10 +71,15 @@ public class FileStorageService {
             );
 
         } catch (Exception e) {
-            System.out.println("Erro ao transformar PDF em texto: " + e.getMessage());
-            throw new RuntimeException("Erro ao transformar PDF em texto", e);
+            System.out.println("Erro ao processar o arquivo: " + e.getMessage());
+            throw new RuntimeException("Erro ao processar o arquivo", e);
+        } finally {
+            if (localFile != null && localFile.exists()) {
+                localFile.delete(); // limpa o arquivo local
+            }
         }
     }
+
 
 
     @Transactional(readOnly = true)
@@ -104,5 +120,14 @@ public class FileStorageService {
             throw new RuntimeException("Erro ao deletar a entidade com ID " + id, e);
         }
     }
+
+    private File convertMultipartToFile(MultipartFile multipartFile) throws IOException {
+        File convFile = new File(System.getProperty("java.io.tmpdir") + "/" + UUID.randomUUID() + "-" + multipartFile.getOriginalFilename());
+        FileOutputStream fos = new FileOutputStream(convFile);
+        fos.write(multipartFile.getBytes());
+        fos.close();
+        return convFile;
+    }
+
 }
 
