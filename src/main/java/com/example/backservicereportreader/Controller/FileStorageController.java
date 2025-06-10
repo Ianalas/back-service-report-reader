@@ -10,7 +10,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = "http://18.236.240.43")
 @RestController
 @RequestMapping("/api")
 public class FileStorageController {
